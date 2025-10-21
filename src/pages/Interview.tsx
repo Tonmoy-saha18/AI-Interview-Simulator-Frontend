@@ -70,10 +70,16 @@ const Interview = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-hero py-8 px-4">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-hero py-8 px-4 relative overflow-hidden">
+      {/* Animated background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse-glow" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent/5 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
+      </div>
+      
+      <div className="max-w-3xl mx-auto space-y-6 relative z-10">
         {/* Header */}
-        <div className="animate-fade-in">
+        <div className="animate-fade-in backdrop-blur-sm bg-card/50 rounded-2xl p-6 border border-primary/20 shadow-glow">
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-3xl font-bold text-foreground">{role}</h1>
@@ -96,7 +102,7 @@ const Interview = () => {
         />
 
         {/* Answer Input */}
-        <div className="bg-card rounded-xl shadow-soft p-6 space-y-4 animate-fade-in">
+        <div className="bg-gradient-card rounded-2xl shadow-glow p-6 space-y-4 animate-fade-in border border-primary/20 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-foreground">
               Your Answer

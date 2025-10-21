@@ -8,11 +8,11 @@ interface QuestionCardProps {
 
 const QuestionCard = ({ question, questionNumber }: QuestionCardProps) => {
   return (
-    <Card className="p-8 shadow-medium bg-card animate-fade-in">
+    <Card className="p-8 shadow-glow bg-gradient-card animate-fade-in border-2 border-primary/30 backdrop-blur-sm">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0">
-          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-            <MessageSquare className="w-6 h-6 text-primary" />
+          <div className="w-14 h-14 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-glow">
+            <MessageSquare className="w-7 h-7 text-white" />
           </div>
         </div>
         <div className="flex-1">

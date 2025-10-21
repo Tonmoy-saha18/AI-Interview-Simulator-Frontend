@@ -57,12 +57,18 @@ const Feedback = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-hero py-12 px-4">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-hero py-12 px-4 relative overflow-hidden">
+      {/* Animated background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-success/5 rounded-full blur-3xl animate-pulse-glow" />
+        <div className="absolute bottom-1/3 right-1/3 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '1s' }} />
+      </div>
+      
+      <div className="max-w-4xl mx-auto space-y-8 relative z-10">
         {/* Header */}
         <div className="text-center space-y-4 animate-fade-in">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-success/10 mb-4">
-            <CheckCircle2 className="w-10 h-10 text-success" />
+          <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-success to-success/60 mb-4 shadow-glow">
+            <CheckCircle2 className="w-12 h-12 text-white" />
           </div>
           <h1 className="text-4xl font-bold text-foreground">Interview Complete!</h1>
           <p className="text-muted-foreground text-lg">
@@ -71,23 +77,28 @@ const Feedback = () => {
         </div>
 
         {/* Overall Score */}
-        <Card className="p-8 text-center shadow-medium animate-fade-in bg-gradient-primary">
-          <div className="space-y-2">
-            <Award className="w-12 h-12 mx-auto text-white mb-4" />
-            <h2 className="text-white text-lg font-medium">Overall Performance</h2>
-            <div className="text-6xl font-bold text-white">
+        <Card className="p-10 text-center shadow-glow animate-fade-in bg-gradient-primary border-2 border-primary-glow/30 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent_50%)]" />
+          <div className="space-y-3 relative z-10">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm mx-auto mb-4 shadow-glow">
+              <Award className="w-10 h-10 text-white" />
+            </div>
+            <h2 className="text-white text-xl font-semibold">Overall Performance</h2>
+            <div className="text-7xl font-bold text-white drop-shadow-lg">
               {mockFeedback.overallScore}%
             </div>
-            <p className="text-white/80">Excellent performance!</p>
+            <p className="text-white/90 text-lg font-medium">Excellent performance!</p>
           </div>
         </Card>
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Strengths */}
-          <Card className="p-6 shadow-soft animate-fade-in">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-5 h-5 text-success" />
-              <h3 className="text-xl font-semibold text-foreground">Strengths</h3>
+          <Card className="p-7 shadow-glow animate-fade-in bg-gradient-card border-2 border-success/30 backdrop-blur-sm hover:scale-105 transition-transform">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-success to-success/60 flex items-center justify-center shadow-glow">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground">Strengths</h3>
             </div>
             <ul className="space-y-3">
               {mockFeedback.strengths.map((strength, index) => (
@@ -100,10 +111,12 @@ const Feedback = () => {
           </Card>
 
           {/* Areas for Improvement */}
-          <Card className="p-6 shadow-soft animate-fade-in">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-5 h-5 text-accent" />
-              <h3 className="text-xl font-semibold text-foreground">Areas to Improve</h3>
+          <Card className="p-7 shadow-glow animate-fade-in bg-gradient-card border-2 border-accent/30 backdrop-blur-sm hover:scale-105 transition-transform">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center shadow-glow">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground">Areas to Improve</h3>
             </div>
             <ul className="space-y-3">
               {mockFeedback.improvements.map((improvement, index) => (
@@ -118,9 +131,9 @@ const Feedback = () => {
 
         {/* Detailed Feedback */}
         <div className="space-y-4">
-          <h3 className="text-2xl font-semibold text-foreground">Question-by-Question Analysis</h3>
+          <h3 className="text-3xl font-bold text-foreground mb-6">Question-by-Question Analysis</h3>
           {mockFeedback.detailedFeedback.map((item, index) => (
-            <Card key={index} className="p-6 shadow-soft animate-fade-in">
+            <Card key={index} className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm hover:scale-[1.02] transition-transform">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <h4 className="font-medium text-foreground mb-2">
