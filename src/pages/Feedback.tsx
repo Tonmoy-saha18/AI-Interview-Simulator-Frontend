@@ -1,50 +1,68 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CheckCircle2, TrendingUp, Award, Home } from "lucide-react";
-
-// Mock feedback - in production this would come from your Python Langraph evaluation
-const mockFeedback = {
-  overallScore: 85,
-  strengths: [
-    "Clear and concise communication",
-    "Strong technical knowledge",
-    "Good problem-solving approach",
-  ],
-  improvements: [
-    "Could provide more specific examples",
-    "Practice structuring answers using STAR method",
-  ],
-  detailedFeedback: [
-    {
-      question: "Tell me about yourself",
-      score: 90,
-      feedback: "Excellent introduction with relevant experience highlighted.",
-    },
-    {
-      question: "Key strengths",
-      score: 85,
-      feedback: "Good self-awareness, but could link strengths more directly to role requirements.",
-    },
-    {
-      question: "Challenging project",
-      score: 80,
-      feedback: "Clear problem description, but could elaborate more on the solution process.",
-    },
-  ],
-};
+import { CheckCircle2, TrendingUp, Award, Home, Loader2 } from "lucide-react";
+import { useInterview } from "@/hooks/useInterview";
+import { InterviewStepResponse, EvaluationModel, QARecordModel } from "@/lib/api";
 
 const Feedback = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, position } = location.state || {};
+  const { role, position, sessionId, finalResponse } = location.state || {};
+  const { getSessionState, endSession, isLoading, error } = useInterview();
+  const [feedbackData, setFeedbackData] = useState<InterviewStepResponse | null>(finalResponse || null);
 
   useEffect(() => {
     if (!role || !position) {
       navigate("/");
+      return;
     }
-  }, [role, position, navigate]);
+
+    // If we don't have feedback data, try to get it from the session
+    if (!feedbackData && sessionId) {
+      getSessionState(sessionId).then((response) => {
+        setFeedbackData(response);
+      }).catch((error) => {
+        console.error("Failed to get session state:", error);
+      });
+    }
+  }, [role, position, navigate, sessionId, feedbackData, getSessionState]);
+
+  // Calculate overall score from evaluations
+  const calculateOverallScore = (qaHistory: QARecordModel[]): number => {
+    if (!qaHistory.length) return 0;
+    
+    const scores = qaHistory
+      .map(qa => qa.evaluation?.score)
+      .filter((score): score is number => score !== undefined && score !== null);
+    
+    if (!scores.length) return 0;
+    
+    return (scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100;
+  };
+
+  // Extract strengths and improvements from evaluations
+  const extractFeedback = (qaHistory: QARecordModel[]) => {
+    const strengths: string[] = [];
+    const improvements: string[] = [];
+    
+    qaHistory.forEach(qa => {
+      if (qa.evaluation) {
+        if (qa.evaluation.strengths) {
+          strengths.push(...qa.evaluation.strengths);
+        }
+        if (qa.evaluation.improvements) {
+          improvements.push(...qa.evaluation.improvements);
+        }
+      }
+    });
+    
+    return {
+      strengths: [...new Set(strengths)], // Remove duplicates
+      improvements: [...new Set(improvements)] // Remove duplicates
+    };
+  };
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-success";
@@ -55,6 +73,34 @@ const Feedback = () => {
   if (!role || !position) {
     return null;
   }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-hero py-8 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-destructive mb-4">Error</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => navigate("/")}>
+            Back to Home
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading || !feedbackData) {
+    return (
+      <div className="min-h-screen bg-gradient-hero py-8 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Loading feedback...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const overallScore = calculateOverallScore(feedbackData.qa_history);
+  const { strengths, improvements } = extractFeedback(feedbackData.qa_history);
 
   return (
     <div className="min-h-screen bg-gradient-hero py-12 px-4 relative overflow-hidden">
@@ -85,9 +131,13 @@ const Feedback = () => {
             </div>
             <h2 className="text-white text-xl font-semibold">Overall Performance</h2>
             <div className="text-7xl font-bold text-white drop-shadow-lg">
-              {mockFeedback.overallScore}%
+              {overallScore}%
             </div>
-            <p className="text-white/90 text-lg font-medium">Excellent performance!</p>
+            <p className="text-white/90 text-lg font-medium">
+              {overallScore >= 80 ? "Excellent performance!" : 
+               overallScore >= 60 ? "Good performance!" : 
+               "Keep practicing!"}
+            </p>
           </div>
         </Card>
 
@@ -101,12 +151,16 @@ const Feedback = () => {
               <h3 className="text-xl font-bold text-foreground">Strengths</h3>
             </div>
             <ul className="space-y-3">
-              {mockFeedback.strengths.map((strength, index) => (
-                <li key={index} className="flex items-start gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-success mt-0.5 flex-shrink-0" />
-                  <span className="text-muted-foreground">{strength}</span>
-                </li>
-              ))}
+              {strengths.length > 0 ? (
+                strengths.map((strength, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-success mt-0.5 flex-shrink-0" />
+                    <span className="text-muted-foreground">{strength}</span>
+                  </li>
+                ))
+              ) : (
+                <li className="text-muted-foreground italic">No specific strengths identified</li>
+              )}
             </ul>
           </Card>
 
@@ -119,12 +173,16 @@ const Feedback = () => {
               <h3 className="text-xl font-bold text-foreground">Areas to Improve</h3>
             </div>
             <ul className="space-y-3">
-              {mockFeedback.improvements.map((improvement, index) => (
-                <li key={index} className="flex items-start gap-2">
-                  <div className="w-5 h-5 rounded-full border-2 border-accent mt-0.5 flex-shrink-0" />
-                  <span className="text-muted-foreground">{improvement}</span>
-                </li>
-              ))}
+              {improvements.length > 0 ? (
+                improvements.map((improvement, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <div className="w-5 h-5 rounded-full border-2 border-accent mt-0.5 flex-shrink-0" />
+                    <span className="text-muted-foreground">{improvement}</span>
+                  </li>
+                ))
+              ) : (
+                <li className="text-muted-foreground italic">No specific improvements identified</li>
+              )}
             </ul>
           </Card>
         </div>
@@ -132,27 +190,53 @@ const Feedback = () => {
         {/* Detailed Feedback */}
         <div className="space-y-4">
           <h3 className="text-3xl font-bold text-foreground mb-6">Question-by-Question Analysis</h3>
-          {mockFeedback.detailedFeedback.map((item, index) => (
-            <Card key={index} className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm hover:scale-[1.02] transition-transform">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <h4 className="font-medium text-foreground mb-2">
-                    Q{index + 1}: {item.question}
-                  </h4>
-                  <p className="text-muted-foreground">{item.feedback}</p>
+          {feedbackData.qa_history.length > 0 ? (
+            feedbackData.qa_history.map((qa, index) => (
+              <Card key={index} className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm hover:scale-[1.02] transition-transform">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-foreground mb-2">
+                      Q{index + 1}: {qa.question}
+                    </h4>
+                    <div className="mb-3">
+                      <p className="text-sm text-muted-foreground mb-1">Your Answer:</p>
+                      <p className="text-sm bg-muted/50 p-2 rounded border-l-2 border-primary">{qa.answer}</p>
+                    </div>
+                    {qa.evaluation && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Feedback:</p>
+                        <p className="text-sm text-muted-foreground">{qa.evaluation.reasoning || "No specific feedback provided"}</p>
+                        {qa.evaluation.follow_up && (
+                          <div className="mt-2 p-2 bg-accent/10 rounded border-l-2 border-accent">
+                            <p className="text-sm text-muted-foreground mb-1">Follow-up suggestion:</p>
+                            <p className="text-sm">{qa.evaluation.follow_up}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {qa.evaluation && (
+                    <div className={`text-3xl font-bold ${getScoreColor(qa.evaluation.score)}`}>
+                      {qa.evaluation.score}
+                    </div>
+                  )}
                 </div>
-                <div className={`text-3xl font-bold ${getScoreColor(item.score)}`}>
-                  {item.score}
-                </div>
-              </div>
+              </Card>
+            ))
+          ) : (
+            <Card className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm">
+              <p className="text-muted-foreground text-center">No question history available</p>
             </Card>
-          ))}
+          )}
         </div>
 
         {/* Actions */}
         <div className="flex justify-center gap-4 pt-6">
           <Button
-            onClick={() => navigate("/")}
+            onClick={() => {
+              endSession();
+              navigate("/");
+            }}
             size="lg"
             variant="outline"
           >
@@ -160,7 +244,10 @@ const Feedback = () => {
             Back to Home
           </Button>
           <Button
-            onClick={() => navigate("/interview", { state: { role, position } })}
+            onClick={() => {
+              endSession();
+              navigate("/interview", { state: { role, position } });
+            }}
             size="lg"
             variant="gradient"
           >

@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Briefcase, GraduationCap } from "lucide-react";
+import { Sparkles, Briefcase, GraduationCap, Mic, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
+import { useInterview } from "@/hooks/useInterview";
 
 const jobRoles = [
   "Software Engineer",
@@ -26,23 +27,25 @@ const jobRoles = [
 ];
 
 const positions = [
-  "Entry Level",
-  "Junior",
-  "Mid-Level",
-  "Senior",
-  "Lead",
-  "Principal",
-  "Manager",
-  "Director",
+  { value: "junior", label: "Junior" },
+  { value: "mid", label: "Mid-Level" },
+  { value: "senior", label: "Senior" },
+  { value: "lead", label: "Lead" },
+  { value: "principal", label: "Principal" },
+  { value: "manager", label: "Manager" },
+  { value: "director", label: "Director" },
 ];
 
 const Index = () => {
   const navigate = useNavigate();
+  const { startInterview, isLoading } = useInterview();
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedPosition, setSelectedPosition] = useState("");
   const [customRole, setCustomRole] = useState("");
+  const [questions, setQuestions] = useState(3);
+  const [candidateProfile, setCandidateProfile] = useState("");
 
-  const handleStartInterview = () => {
+  const handleStartInterview = async () => {
     const role = customRole || selectedRole;
     
     if (!role || !selectedPosition) {
@@ -50,12 +53,27 @@ const Index = () => {
       return;
     }
 
-    navigate("/interview", { 
-      state: { 
-        role, 
-        position: selectedPosition 
-      } 
-    });
+    try {
+      const response = await startInterview({
+        role,
+        level: selectedPosition,
+        questions,
+        candidate_profile: candidateProfile,
+      });
+
+      // Navigate to interview with session data
+      navigate("/interview", { 
+        state: { 
+          sessionId: response.session_id,
+          role, 
+          position: selectedPosition,
+          initialResponse: response
+        } 
+      });
+    } catch (error) {
+      // Error handling is done in the hook
+      console.error("Failed to start interview:", error);
+    }
   };
 
   return (
@@ -134,12 +152,42 @@ const Index = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {positions.map((position) => (
-                        <SelectItem key={position} value={position}>
-                          {position}
+                        <SelectItem key={position.value} value={position.value}>
+                          {position.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Additional Options */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Number of Questions */}
+                <div className="space-y-4">
+                  <Label className="text-base">Number of Questions</Label>
+                  <Select value={questions.toString()} onValueChange={(value) => setQuestions(parseInt(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                        <SelectItem key={num} value={num.toString()}>
+                          {num} Question{num > 1 ? 's' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Candidate Profile */}
+                <div className="space-y-4">
+                  <Label className="text-base">Candidate Profile (Optional)</Label>
+                  <Input
+                    placeholder="Brief summary of your background..."
+                    value={candidateProfile}
+                    onChange={(e) => setCandidateProfile(e.target.value)}
+                  />
                 </div>
               </div>
 
@@ -148,9 +196,19 @@ const Index = () => {
                 size="lg"
                 variant="gradient"
                 className="w-full text-lg h-14"
+                disabled={isLoading}
               >
-                Start Interview
-                <Sparkles className="ml-2 h-5 w-5" />
+                {isLoading ? (
+                  <>
+                    Starting Interview...
+                    <div className="ml-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  </>
+                ) : (
+                  <>
+                    Start Interview
+                    <Sparkles className="ml-2 h-5 w-5" />
+                  </>
+                )}
               </Button>
             </div>
           </Card>
@@ -192,8 +250,5 @@ const Index = () => {
     </div>
   );
 };
-
-// Missing import
-import { Mic, TrendingUp } from "lucide-react";
 
 export default Index;
