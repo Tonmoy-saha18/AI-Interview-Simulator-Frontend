@@ -42,7 +42,8 @@ const Index = () => {
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedPosition, setSelectedPosition] = useState("");
   const [customRole, setCustomRole] = useState("");
-  const [questions, setQuestions] = useState(3);
+  // Generate random number of questions between 3-10
+  const generateRandomQuestions = () => Math.floor(Math.random() * 8) + 3; // 3-10 inclusive
   const [candidateProfile, setCandidateProfile] = useState("");
 
   const handleStartInterview = async () => {
@@ -54,10 +55,11 @@ const Index = () => {
     }
 
     try {
+      const randomQuestions = generateRandomQuestions();
       const response = await startInterview({
         role,
         level: selectedPosition,
-        questions,
+        questions: randomQuestions,
         candidate_profile: candidateProfile,
       });
 
@@ -162,24 +164,7 @@ const Index = () => {
               </div>
 
               {/* Additional Options */}
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Number of Questions */}
-                <div className="space-y-4">
-                  <Label className="text-base">Number of Questions</Label>
-                  <Select value={questions.toString()} onValueChange={(value) => setQuestions(parseInt(value))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                        <SelectItem key={num} value={num.toString()}>
-                          {num} Question{num > 1 ? 's' : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
+              <div className="space-y-4">
                 {/* Candidate Profile */}
                 <div className="space-y-4">
                   <Label className="text-base">Candidate Profile (Optional)</Label>

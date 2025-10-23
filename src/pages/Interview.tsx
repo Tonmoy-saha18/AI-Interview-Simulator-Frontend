@@ -176,7 +176,7 @@ const Interview = () => {
         )}
 
         {/* Debug Info - Remove this in production */}
-        {process.env.NODE_ENV === 'development' && (
+        {/* {process.env.NODE_ENV === 'development' && (
           <div className="bg-muted/50 rounded-lg p-4 text-xs">
             <h4 className="font-bold mb-2">Debug Info:</h4>
             <p>Session ID: {sessionId || 'None'}</p>
@@ -213,7 +213,7 @@ const Interview = () => {
               </Button>
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Answer Input */}
         {currentQuestion && (

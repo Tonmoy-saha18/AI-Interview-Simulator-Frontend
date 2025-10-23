@@ -33,13 +33,13 @@ const Feedback = () => {
   const calculateOverallScore = (qaHistory: QARecordModel[]): number => {
     if (!qaHistory.length) return 0;
     
-    const scores = qaHistory
+    const scores = qaHistory 
       .map(qa => qa.evaluation?.score)
       .filter((score): score is number => score !== undefined && score !== null);
     
     if (!scores.length) return 0;
     
-    return (scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100;
+    return ((scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100).toFixed(2);
   };
 
   // Extract strengths and improvements from evaluations
