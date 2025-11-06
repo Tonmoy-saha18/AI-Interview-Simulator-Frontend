@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Mic, Send, CheckCircle2, Loader2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Mic, Send, CheckCircle2, Loader2, Clock, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import QuestionCard from "@/components/QuestionCard";
 import { useInterview } from "@/hooks/useInterview";
+import { APIError } from "@/lib/api";
 
 const Interview = () => {
   const location = useLocation();
@@ -17,7 +20,15 @@ const Interview = () => {
     status, 
     currentQuestion, 
     questionIndex, 
-    questionLimit, 
+    questionLimit,
+    questionDifficulty,
+    questionTimeLimit,
+    timeElapsed,
+    timeRemaining,
+    totalTimeElapsed,
+    timeExpired,
+    isFollowUp,
+    followUpCount,
     evaluation, 
     feedback, 
     qaHistory, 
@@ -33,7 +44,50 @@ const Interview = () => {
   const { role, position, sessionId: locationSessionId, initialResponse } = location.state || {};
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
+  const [timerExpired, setTimerExpired] = useState(false);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const questionStartTimeRef = useRef<number | null>(null);
   
+  // Initialize timer when question changes
+  useEffect(() => {
+    if (questionTimeLimit !== null && currentQuestion && status === 'awaiting_answer') {
+      // Start timer from timeRemaining if available (and > 0), otherwise from questionTimeLimit
+      const initialTime = (timeRemaining !== null && timeRemaining > 0) ? timeRemaining : questionTimeLimit;
+      setTimerSeconds(initialTime);
+      setTimerExpired(initialTime <= 0);
+      questionStartTimeRef.current = Date.now();
+      
+      // Clear any existing timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+      
+      // Only start countdown if time is remaining
+      if (initialTime > 0) {
+        timerIntervalRef.current = setInterval(() => {
+          setTimerSeconds(prev => {
+            if (prev === null || prev <= 0) {
+              setTimerExpired(true);
+              if (timerIntervalRef.current) {
+                clearInterval(timerIntervalRef.current);
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+      
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+      };
+    }
+  }, [currentQuestion, questionTimeLimit, timeRemaining, status]);
+
+
   useEffect(() => {
     if (!role || !position) {
       navigate("/");
@@ -55,6 +109,15 @@ const Interview = () => {
       getSessionState(locationSessionId);
     }
   }, [role, position, navigate, initialResponse, locationSessionId, getSessionState, initializeWithResponse]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Calculate progress
   const progress = questionIndex !== null && questionLimit 
@@ -79,9 +142,24 @@ const Interview = () => {
       return;
     }
 
+    // Calculate time taken
+    const timeTaken = questionStartTimeRef.current 
+      ? Math.floor((Date.now() - questionStartTimeRef.current) / 1000)
+      : undefined;
+    
+    const expired = timerExpired || (timerSeconds !== null && timerSeconds <= 0);
+
     try {
-      const response = await submitAnswer(currentAnswer);
+      // Stop timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+
+      const response = await submitAnswer(currentAnswer, timeTaken, expired);
       setCurrentAnswer("");
+      setTimerSeconds(null);
+      setTimerExpired(false);
 
       // Check if interview is completed
       if (response.status === 'completed') {
@@ -117,14 +195,61 @@ const Interview = () => {
   }
 
   if (error) {
+    // Check if error contains APIError-like information
+    const isRateLimitError = error.toLowerCase().includes('quota') || error.toLowerCase().includes('rate limit');
+    const isAPIServiceError = error.toLowerCase().includes('api service') || error.toLowerCase().includes('openai');
+    const isNetworkError = error.toLowerCase().includes('network') || error.toLowerCase().includes('connection');
+
     return (
       <div className="min-h-screen bg-gradient-hero py-8 px-4 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-destructive mb-4">Error</h2>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button onClick={() => navigate("/")}>
-            Back to Home
-          </Button>
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="bg-gradient-card rounded-2xl p-8 border-2 border-destructive/30 shadow-glow">
+            <div className="space-y-4">
+              <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-8 h-8 text-destructive" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground">
+                {isRateLimitError ? 'Rate Limit Exceeded' : 
+                 isAPIServiceError ? 'API Service Error' :
+                 isNetworkError ? 'Network Error' :
+                 'Error'}
+              </h2>
+              <p className="text-muted-foreground">{error}</p>
+              
+              {isRateLimitError && (
+                <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/20">
+                  <p className="text-sm text-muted-foreground">
+                    This usually means the OpenAI API quota has been exceeded. Please check your OpenAI billing and quota settings.
+                  </p>
+                </div>
+              )}
+              
+              {isAPIServiceError && (
+                <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/20">
+                  <p className="text-sm text-muted-foreground">
+                    The external API service is experiencing issues. Please try again later.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex gap-4 justify-center">
+            <Button 
+              onClick={() => navigate("/")}
+              variant="outline"
+            >
+              Back to Home
+            </Button>
+            {isRateLimitError || isAPIServiceError ? (
+              <Button 
+                onClick={() => window.location.reload()}
+                variant="gradient"
+              >
+                Retry
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
     );
@@ -156,11 +281,38 @@ const Interview = () => {
           <Progress value={progress} className="h-2" />
         </div>
 
+        {/* Timer Display */}
+        {timerSeconds !== null && questionTimeLimit && (
+          <div className="flex items-center justify-center gap-2">
+            <Card className="px-4 py-2 bg-gradient-card border border-primary/20 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <Clock className={`w-4 h-4 ${timerSeconds <= 30 ? 'text-destructive animate-pulse' : 'text-primary'}`} />
+                <span className={`font-mono text-lg font-bold ${
+                  timerSeconds <= 30 ? 'text-destructive' : 
+                  timerSeconds <= 60 ? 'text-accent' : 
+                  'text-foreground'
+                }`}>
+                  {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
+                </span>
+                {timerExpired && (
+                  <Badge variant="destructive" className="ml-2">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Time Expired
+                  </Badge>
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
+
         {/* Question Card */}
         {currentQuestion && (
           <QuestionCard 
             question={currentQuestion} 
             questionNumber={questionIndex !== null ? questionIndex : 1}
+            difficulty={questionDifficulty}
+            isFollowUp={isFollowUp}
+            followUpCount={followUpCount}
           />
         )}
 
@@ -237,27 +389,35 @@ const Interview = () => {
               disabled={isRecording || isLoading}
             />
 
-            <div className="flex justify-end">
-              <Button
-                onClick={handleSubmitAnswer}
-                size="lg"
-                variant="gradient"
-                disabled={isRecording || isLoading || !currentAnswer.trim()}
-              >
-                {isLoading ? (
-                  <>
-                    Submitting... <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                  </>
-                ) : status === 'completed' || (questionIndex !== null && questionLimit && questionIndex >= questionLimit) ? (
-                  <>
-                    Complete Interview <CheckCircle2 className="ml-2 h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    Submit Answer <Send className="ml-2 h-4 w-4" />
-                  </>
-                )}
-              </Button>
+            <div className="flex justify-between items-center">
+              {timerExpired && (
+                <div className="text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Time has expired. You can still submit your answer.
+                </div>
+              )}
+              <div className="ml-auto">
+                <Button
+                  onClick={handleSubmitAnswer}
+                  size="lg"
+                  variant="gradient"
+                  disabled={isRecording || isLoading || !currentAnswer.trim()}
+                >
+                  {isLoading ? (
+                    <>
+                      Submitting... <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    </>
+                  ) : status === 'completed' || (questionIndex !== null && questionLimit && questionIndex >= questionLimit) ? (
+                    <>
+                      Complete Interview <CheckCircle2 className="ml-2 h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer <Send className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}

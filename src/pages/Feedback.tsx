@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, TrendingUp, Award, Home, Loader2 } from "lucide-react";
 import { useInterview } from "@/hooks/useInterview";
 import { InterviewStepResponse, EvaluationModel, QARecordModel } from "@/lib/api";
@@ -34,12 +35,45 @@ const Feedback = () => {
     if (!qaHistory.length) return 0;
     
     const scores = qaHistory 
-      .map(qa => qa.evaluation?.score)
+      .map(qa => qa.evaluation?.overall_score ?? qa.evaluation?.score)
       .filter((score): score is number => score !== undefined && score !== null);
     
     if (!scores.length) return 0;
     
-    return ((scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100).toFixed(2);
+    return parseFloat(((scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100).toFixed(2));
+  };
+
+  // Calculate average scores by dimension
+  const calculateAverageScores = (qaHistory: QARecordModel[]) => {
+    const technicalScores: number[] = [];
+    const communicationScores: number[] = [];
+    const problemSolvingScores: number[] = [];
+    
+    qaHistory.forEach(qa => {
+      if (qa.evaluation) {
+        if (qa.evaluation.technical_depth !== null && qa.evaluation.technical_depth !== undefined) {
+          technicalScores.push(qa.evaluation.technical_depth);
+        }
+        if (qa.evaluation.communication !== null && qa.evaluation.communication !== undefined) {
+          communicationScores.push(qa.evaluation.communication);
+        }
+        if (qa.evaluation.problem_solving !== null && qa.evaluation.problem_solving !== undefined) {
+          problemSolvingScores.push(qa.evaluation.problem_solving);
+        }
+      }
+    });
+
+    return {
+      technical: technicalScores.length > 0 
+        ? parseFloat((technicalScores.reduce((a, b) => a + b, 0) / technicalScores.length).toFixed(2))
+        : null,
+      communication: communicationScores.length > 0
+        ? parseFloat((communicationScores.reduce((a, b) => a + b, 0) / communicationScores.length).toFixed(2))
+        : null,
+      problemSolving: problemSolvingScores.length > 0
+        ? parseFloat((problemSolvingScores.reduce((a, b) => a + b, 0) / problemSolvingScores.length).toFixed(2))
+        : null,
+    };
   };
 
   // Extract strengths and improvements from evaluations
@@ -100,6 +134,7 @@ const Feedback = () => {
   }
 
   const overallScore = calculateOverallScore(feedbackData.qa_history);
+  const averageScores = calculateAverageScores(feedbackData.qa_history);
   const { strengths, improvements } = extractFeedback(feedbackData.qa_history);
 
   return (
@@ -140,6 +175,42 @@ const Feedback = () => {
             </p>
           </div>
         </Card>
+
+        {/* Multi-dimensional Scores */}
+        {(averageScores.technical !== null || averageScores.communication !== null || averageScores.problemSolving !== null) && (
+          <Card className="p-7 shadow-glow animate-fade-in bg-gradient-card border-2 border-primary/20 backdrop-blur-sm">
+            <h3 className="text-2xl font-bold text-foreground mb-6 text-center">Performance Breakdown</h3>
+            <div className="grid md:grid-cols-3 gap-6">
+              {averageScores.technical !== null && (
+                <div className="text-center p-4 rounded-xl bg-accent/10 border border-accent/20">
+                  <div className="text-sm text-muted-foreground mb-2">Technical Depth</div>
+                  <div className="text-4xl font-bold text-accent">{averageScores.technical}/5</div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {((averageScores.technical / 5) * 100).toFixed(0)}% average
+                  </div>
+                </div>
+              )}
+              {averageScores.communication !== null && (
+                <div className="text-center p-4 rounded-xl bg-success/10 border border-success/20">
+                  <div className="text-sm text-muted-foreground mb-2">Communication</div>
+                  <div className="text-4xl font-bold text-success">{averageScores.communication}/5</div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {((averageScores.communication / 5) * 100).toFixed(0)}% average
+                  </div>
+                </div>
+              )}
+              {averageScores.problemSolving !== null && (
+                <div className="text-center p-4 rounded-xl bg-primary/10 border border-primary/20">
+                  <div className="text-sm text-muted-foreground mb-2">Problem Solving</div>
+                  <div className="text-4xl font-bold text-primary">{averageScores.problemSolving}/5</div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {((averageScores.problemSolving / 5) * 100).toFixed(0)}% average
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Strengths */}
@@ -203,9 +274,37 @@ const Feedback = () => {
                       <p className="text-sm bg-muted/50 p-2 rounded border-l-2 border-primary">{qa.answer}</p>
                     </div>
                     {qa.evaluation && (
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Feedback:</p>
-                        <p className="text-sm text-muted-foreground">{qa.evaluation.reasoning || "No specific feedback provided"}</p>
+                      <div className="space-y-3">
+                        {/* Multi-dimensional scores */}
+                        {(qa.evaluation.overall_score !== null || qa.evaluation.technical_depth !== null || 
+                          qa.evaluation.communication !== null || qa.evaluation.problem_solving !== null) && (
+                          <div className="flex flex-wrap gap-3">
+                            {(qa.evaluation.overall_score !== null && qa.evaluation.overall_score !== undefined) && (
+                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                                Overall: {qa.evaluation.overall_score}/5
+                              </Badge>
+                            )}
+                            {(qa.evaluation.technical_depth !== null && qa.evaluation.technical_depth !== undefined) && (
+                              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30">
+                                Technical: {qa.evaluation.technical_depth}/5
+                              </Badge>
+                            )}
+                            {(qa.evaluation.communication !== null && qa.evaluation.communication !== undefined) && (
+                              <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+                                Communication: {qa.evaluation.communication}/5
+                              </Badge>
+                            )}
+                            {(qa.evaluation.problem_solving !== null && qa.evaluation.problem_solving !== undefined) && (
+                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                                Problem Solving: {qa.evaluation.problem_solving}/5
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-1">Feedback:</p>
+                          <p className="text-sm text-muted-foreground">{qa.evaluation.reasoning || "No specific feedback provided"}</p>
+                        </div>
                         {qa.evaluation.follow_up && (
                           <div className="mt-2 p-2 bg-accent/10 rounded border-l-2 border-accent">
                             <p className="text-sm text-muted-foreground mb-1">Follow-up suggestion:</p>
@@ -216,8 +315,8 @@ const Feedback = () => {
                     )}
                   </div>
                   {qa.evaluation && (
-                    <div className={`text-3xl font-bold ${getScoreColor(qa.evaluation.score)}`}>
-                      {qa.evaluation.score}
+                    <div className={`text-3xl font-bold ${getScoreColor(qa.evaluation.overall_score ?? qa.evaluation.score ?? 0)}`}>
+                      {qa.evaluation.overall_score ?? qa.evaluation.score ?? 'N/A'}
                     </div>
                   )}
                 </div>

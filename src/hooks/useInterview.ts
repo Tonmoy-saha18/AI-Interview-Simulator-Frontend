@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { apiClient, InterviewStepResponse, InterviewStartRequest } from '@/lib/api';
+import { apiClient, InterviewStepResponse, InterviewStartRequest, APIError } from '@/lib/api';
 import { toast } from 'sonner';
 
 export interface InterviewState {
@@ -8,6 +8,14 @@ export interface InterviewState {
   currentQuestion: string | null;
   questionIndex: number | null;
   questionLimit: number | null;
+  questionDifficulty: string | null;
+  questionTimeLimit: number | null;
+  timeElapsed: number | null;
+  timeRemaining: number | null;
+  totalTimeElapsed: number | null;
+  timeExpired: boolean | null;
+  isFollowUp: boolean | null;
+  followUpCount: number | null;
   evaluation: any | null;
   feedback: string | null;
   qaHistory: any[];
@@ -23,6 +31,14 @@ export const useInterview = () => {
     currentQuestion: null,
     questionIndex: null,
     questionLimit: null,
+    questionDifficulty: null,
+    questionTimeLimit: null,
+    timeElapsed: null,
+    timeRemaining: null,
+    totalTimeElapsed: null,
+    timeExpired: null,
+    isFollowUp: null,
+    followUpCount: null,
     evaluation: null,
     feedback: null,
     qaHistory: [],
@@ -41,6 +57,14 @@ export const useInterview = () => {
         currentQuestion: response.question || null,
         questionIndex: response.question_index || null,
         questionLimit: response.question_limit || null,
+        questionDifficulty: response.question_difficulty || null,
+        questionTimeLimit: response.question_time_limit || null,
+        timeElapsed: response.time_elapsed || null,
+        timeRemaining: response.time_remaining || null,
+        totalTimeElapsed: response.total_time_elapsed || null,
+        timeExpired: response.time_expired || null,
+        isFollowUp: response.is_follow_up || null,
+        followUpCount: response.follow_up_count || null,
         evaluation: response.evaluation || null,
         feedback: response.feedback || null,
         qaHistory: response.qa_history || [],
@@ -68,14 +92,37 @@ export const useInterview = () => {
       toast.success('Interview started successfully!');
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start interview';
+      const errorMessage = getErrorMessage(error);
       setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      toast.error(errorMessage);
+      
+      // Show appropriate toast based on error type
+      if (error instanceof APIError) {
+        if (error.status === 429) {
+          toast.error('Rate Limit Exceeded', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else if (error.status === 502) {
+          toast.error('API Service Error', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else {
+          toast.error(errorMessage, { duration: 5000 });
+        }
+      } else {
+        toast.error(errorMessage);
+      }
+      
       throw error;
     }
   }, [updateState]);
 
-  const submitAnswer = useCallback(async (answer: string) => {
+  const submitAnswer = useCallback(async (
+    answer: string, 
+    timeTaken?: number, 
+    timeExpired?: boolean
+  ) => {
     if (!state.sessionId) {
       throw new Error('No active session');
     }
@@ -83,7 +130,12 @@ export const useInterview = () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      const response = await apiClient.submitAnswer(state.sessionId, answer);
+      const response = await apiClient.submitAnswer(
+        state.sessionId, 
+        answer, 
+        timeTaken, 
+        timeExpired
+      );
       updateState(response);
       
       if (response.status === 'completed') {
@@ -94,9 +146,38 @@ export const useInterview = () => {
       
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to submit answer';
+      const errorMessage = getErrorMessage(error, 'Failed to submit answer');
       setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      toast.error(errorMessage);
+      
+      // Show appropriate toast based on error type
+      if (error instanceof APIError) {
+        if (error.status === 429) {
+          toast.error('Rate Limit Exceeded', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else if (error.status === 502) {
+          toast.error('API Service Error', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else if (error.status === 404) {
+          toast.error('Session Not Found', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else if (error.status === 409) {
+          toast.error('Interview Completed', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else {
+          toast.error(errorMessage, { duration: 5000 });
+        }
+      } else {
+        toast.error(errorMessage);
+      }
+      
       throw error;
     }
   }, [state.sessionId, updateState]);
@@ -109,9 +190,23 @@ export const useInterview = () => {
       updateState(response);
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get session state';
+      const errorMessage = getErrorMessage(error, 'Failed to get session state');
       setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      toast.error(errorMessage);
+      
+      // Show appropriate toast based on error type
+      if (error instanceof APIError) {
+        if (error.status === 404) {
+          toast.error('Session Not Found', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        } else {
+          toast.error(errorMessage, { duration: 5000 });
+        }
+      } else {
+        toast.error(errorMessage);
+      }
+      
       throw error;
     }
   }, [updateState]);
@@ -129,6 +224,14 @@ export const useInterview = () => {
         currentQuestion: null,
         questionIndex: null,
         questionLimit: null,
+        questionDifficulty: null,
+        questionTimeLimit: null,
+        timeElapsed: null,
+        timeRemaining: null,
+        totalTimeElapsed: null,
+        timeExpired: null,
+        isFollowUp: null,
+        followUpCount: null,
         evaluation: null,
         feedback: null,
         qaHistory: [],
@@ -138,7 +241,7 @@ export const useInterview = () => {
       });
       toast.success('Session ended');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to end session';
+      const errorMessage = getErrorMessage(error, 'Failed to end session');
       toast.error(errorMessage);
       console.error('Failed to end session:', error);
     }
@@ -151,6 +254,14 @@ export const useInterview = () => {
       currentQuestion: null,
       questionIndex: null,
       questionLimit: null,
+      questionDifficulty: null,
+      questionTimeLimit: null,
+      timeElapsed: null,
+      timeRemaining: null,
+      totalTimeElapsed: null,
+      timeExpired: null,
+      isFollowUp: null,
+      followUpCount: null,
       evaluation: null,
       feedback: null,
       qaHistory: [],
@@ -170,3 +281,14 @@ export const useInterview = () => {
     initializeWithResponse,
   };
 };
+
+// Helper function to extract error messages
+function getErrorMessage(error: unknown, defaultMessage: string = 'An error occurred'): string {
+  if (error instanceof APIError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return defaultMessage;
+}
