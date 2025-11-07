@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, TrendingUp, Award, Home, Loader2 } from "lucide-react";
+import { CheckCircle2, TrendingUp, Award, Home, Loader2, RotateCcw } from "lucide-react";
 import { useInterview } from "@/hooks/useInterview";
 import { InterviewStepResponse, EvaluationModel, QARecordModel } from "@/lib/api";
 
@@ -30,12 +30,30 @@ const Feedback = () => {
     }
   }, [role, position, navigate, sessionId, feedbackData, getSessionState]);
 
-  // Calculate overall score from evaluations
-  const calculateOverallScore = (qaHistory: QARecordModel[]): number => {
-    if (!qaHistory.length) return 0;
+  // Helper function to recursively collect all evaluations including follow-ups
+  const collectAllEvaluations = (qaHistory: QARecordModel[]): EvaluationModel[] => {
+    const evaluations: EvaluationModel[] = [];
     
-    const scores = qaHistory 
-      .map(qa => qa.evaluation?.overall_score ?? qa.evaluation?.score)
+    const traverseQA = (qa: QARecordModel) => {
+      if (qa.evaluation) {
+        evaluations.push(qa.evaluation);
+      }
+      if (qa.follow_ups && qa.follow_ups.length > 0) {
+        qa.follow_ups.forEach(followUp => traverseQA(followUp));
+      }
+    };
+    
+    qaHistory.forEach(qa => traverseQA(qa));
+    return evaluations;
+  };
+
+  // Calculate overall score from evaluations (including follow-ups)
+  const calculateOverallScore = (qaHistory: QARecordModel[]): number => {
+    const evaluations = collectAllEvaluations(qaHistory);
+    if (evaluations.length === 0) return 0;
+    
+    const scores = evaluations
+      .map(evaluation => evaluation.overall_score ?? evaluation.score)
       .filter((score): score is number => score !== undefined && score !== null);
     
     if (!scores.length) return 0;
@@ -43,23 +61,22 @@ const Feedback = () => {
     return parseFloat(((scores.reduce((sum, score) => sum + score, 0) / (scores.length * 5)) * 100).toFixed(2));
   };
 
-  // Calculate average scores by dimension
+  // Calculate average scores by dimension (including follow-ups)
   const calculateAverageScores = (qaHistory: QARecordModel[]) => {
+    const evaluations = collectAllEvaluations(qaHistory);
     const technicalScores: number[] = [];
     const communicationScores: number[] = [];
     const problemSolvingScores: number[] = [];
     
-    qaHistory.forEach(qa => {
-      if (qa.evaluation) {
-        if (qa.evaluation.technical_depth !== null && qa.evaluation.technical_depth !== undefined) {
-          technicalScores.push(qa.evaluation.technical_depth);
-        }
-        if (qa.evaluation.communication !== null && qa.evaluation.communication !== undefined) {
-          communicationScores.push(qa.evaluation.communication);
-        }
-        if (qa.evaluation.problem_solving !== null && qa.evaluation.problem_solving !== undefined) {
-          problemSolvingScores.push(qa.evaluation.problem_solving);
-        }
+    evaluations.forEach(evaluation => {
+      if (evaluation.technical_depth !== null && evaluation.technical_depth !== undefined) {
+        technicalScores.push(evaluation.technical_depth);
+      }
+      if (evaluation.communication !== null && evaluation.communication !== undefined) {
+        communicationScores.push(evaluation.communication);
+      }
+      if (evaluation.problem_solving !== null && evaluation.problem_solving !== undefined) {
+        problemSolvingScores.push(evaluation.problem_solving);
       }
     });
 
@@ -76,19 +93,18 @@ const Feedback = () => {
     };
   };
 
-  // Extract strengths and improvements from evaluations
+  // Extract strengths and improvements from evaluations (including follow-ups)
   const extractFeedback = (qaHistory: QARecordModel[]) => {
+    const evaluations = collectAllEvaluations(qaHistory);
     const strengths: string[] = [];
     const improvements: string[] = [];
     
-    qaHistory.forEach(qa => {
-      if (qa.evaluation) {
-        if (qa.evaluation.strengths) {
-          strengths.push(...qa.evaluation.strengths);
-        }
-        if (qa.evaluation.improvements) {
-          improvements.push(...qa.evaluation.improvements);
-        }
+    evaluations.forEach(evaluation => {
+      if (evaluation.strengths) {
+        strengths.push(...evaluation.strengths);
+      }
+      if (evaluation.improvements) {
+        improvements.push(...evaluation.improvements);
       }
     });
     
@@ -102,6 +118,95 @@ const Feedback = () => {
     if (score >= 80) return "text-success";
     if (score >= 60) return "text-accent";
     return "text-destructive";
+  };
+
+  // Component to render a single Q&A item (recursive for follow-ups)
+  const renderQAItem = (qa: QARecordModel, index: number, isFollowUp: boolean = false, followUpNumber: number = 0) => {
+    return (
+      <div key={index} className={isFollowUp ? "mt-4 ml-6 pl-4 border-l-2 border-accent/30" : ""}>
+        <Card className={`p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm hover:scale-[1.02] transition-transform ${isFollowUp ? 'bg-accent/5' : ''}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                {isFollowUp && (
+                  <RotateCcw className="w-4 h-4 text-accent flex-shrink-0" />
+                )}
+                <h4 className={`font-medium text-foreground ${isFollowUp ? 'text-sm' : ''}`}>
+                  {isFollowUp ? (
+                    <>Follow-up #{followUpNumber}: {qa.question}</>
+                  ) : (
+                    <>Q{index + 1}: {qa.question}</>
+                  )}
+                </h4>
+                {isFollowUp && (
+                  <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30 text-xs">
+                    Follow-up
+                  </Badge>
+                )}
+              </div>
+              <div className="mb-3">
+                <p className="text-sm text-muted-foreground mb-1">Your Answer:</p>
+                <p className="text-sm bg-muted/50 p-2 rounded border-l-2 border-primary">{qa.answer}</p>
+              </div>
+              {qa.evaluation && (
+                <div className="space-y-3">
+                  {/* Multi-dimensional scores */}
+                  {(qa.evaluation.overall_score !== null || qa.evaluation.technical_depth !== null || 
+                    qa.evaluation.communication !== null || qa.evaluation.problem_solving !== null) && (
+                    <div className="flex flex-wrap gap-3">
+                      {(qa.evaluation.overall_score !== null && qa.evaluation.overall_score !== undefined) && (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                          Overall: {qa.evaluation.overall_score}/5
+                        </Badge>
+                      )}
+                      {(qa.evaluation.technical_depth !== null && qa.evaluation.technical_depth !== undefined) && (
+                        <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30">
+                          Technical: {qa.evaluation.technical_depth}/5
+                        </Badge>
+                      )}
+                      {(qa.evaluation.communication !== null && qa.evaluation.communication !== undefined) && (
+                        <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+                          Communication: {qa.evaluation.communication}/5
+                        </Badge>
+                      )}
+                      {(qa.evaluation.problem_solving !== null && qa.evaluation.problem_solving !== undefined) && (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                          Problem Solving: {qa.evaluation.problem_solving}/5
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Feedback:</p>
+                    <p className="text-sm text-muted-foreground">{qa.evaluation.reasoning || "No specific feedback provided"}</p>
+                  </div>
+                  {qa.evaluation.follow_up && (
+                    <div className="mt-2 p-2 bg-accent/10 rounded border-l-2 border-accent">
+                      <p className="text-sm text-muted-foreground mb-1">Follow-up suggestion:</p>
+                      <p className="text-sm">{qa.evaluation.follow_up}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {qa.evaluation && (
+              <div className={`text-3xl font-bold ${getScoreColor(((qa.evaluation.overall_score ?? qa.evaluation.score ?? 0) / 5) * 100)}`}>
+                {qa.evaluation.overall_score ?? qa.evaluation.score ?? 'N/A'}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Render follow-up questions recursively */}
+        {qa.follow_ups && qa.follow_ups.length > 0 && (
+          <div className="mt-4 space-y-4">
+            {qa.follow_ups.map((followUp, followUpIndex) => 
+              renderQAItem(followUp, followUpIndex + 1, true, followUpIndex + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!role || !position) {
@@ -262,66 +367,7 @@ const Feedback = () => {
         <div className="space-y-4">
           <h3 className="text-3xl font-bold text-foreground mb-6">Question-by-Question Analysis</h3>
           {feedbackData.qa_history.length > 0 ? (
-            feedbackData.qa_history.map((qa, index) => (
-              <Card key={index} className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm hover:scale-[1.02] transition-transform">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h4 className="font-medium text-foreground mb-2">
-                      Q{index + 1}: {qa.question}
-                    </h4>
-                    <div className="mb-3">
-                      <p className="text-sm text-muted-foreground mb-1">Your Answer:</p>
-                      <p className="text-sm bg-muted/50 p-2 rounded border-l-2 border-primary">{qa.answer}</p>
-                    </div>
-                    {qa.evaluation && (
-                      <div className="space-y-3">
-                        {/* Multi-dimensional scores */}
-                        {(qa.evaluation.overall_score !== null || qa.evaluation.technical_depth !== null || 
-                          qa.evaluation.communication !== null || qa.evaluation.problem_solving !== null) && (
-                          <div className="flex flex-wrap gap-3">
-                            {(qa.evaluation.overall_score !== null && qa.evaluation.overall_score !== undefined) && (
-                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                                Overall: {qa.evaluation.overall_score}/5
-                              </Badge>
-                            )}
-                            {(qa.evaluation.technical_depth !== null && qa.evaluation.technical_depth !== undefined) && (
-                              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30">
-                                Technical: {qa.evaluation.technical_depth}/5
-                              </Badge>
-                            )}
-                            {(qa.evaluation.communication !== null && qa.evaluation.communication !== undefined) && (
-                              <Badge variant="outline" className="bg-success/10 text-success border-success/30">
-                                Communication: {qa.evaluation.communication}/5
-                              </Badge>
-                            )}
-                            {(qa.evaluation.problem_solving !== null && qa.evaluation.problem_solving !== undefined) && (
-                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                                Problem Solving: {qa.evaluation.problem_solving}/5
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm text-muted-foreground mb-1">Feedback:</p>
-                          <p className="text-sm text-muted-foreground">{qa.evaluation.reasoning || "No specific feedback provided"}</p>
-                        </div>
-                        {qa.evaluation.follow_up && (
-                          <div className="mt-2 p-2 bg-accent/10 rounded border-l-2 border-accent">
-                            <p className="text-sm text-muted-foreground mb-1">Follow-up suggestion:</p>
-                            <p className="text-sm">{qa.evaluation.follow_up}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {qa.evaluation && (
-                    <div className={`text-3xl font-bold ${getScoreColor(qa.evaluation.overall_score ?? qa.evaluation.score ?? 0)}`}>
-                      {qa.evaluation.overall_score ?? qa.evaluation.score ?? 'N/A'}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))
+            feedbackData.qa_history.map((qa, index) => renderQAItem(qa, index + 1, false, 0))
           ) : (
             <Card className="p-7 shadow-glow animate-fade-in bg-gradient-card border border-primary/20 backdrop-blur-sm">
               <p className="text-muted-foreground text-center">No question history available</p>

@@ -31,6 +31,7 @@ export interface QARecordModel {
   question: string;
   answer: string;
   evaluation?: EvaluationModel | null;
+  follow_ups?: QARecordModel[] | null;
 }
 
 export interface InterviewStepResponse {
