@@ -11,9 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Briefcase, GraduationCap, Mic, TrendingUp } from "lucide-react";
+import { Sparkles, Briefcase, GraduationCap, Mic, TrendingUp, Users, LogIn, LayoutDashboard, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useInterview } from "@/hooks/useInterview";
+import { useAuth } from "@/context/AuthContext";
+import type { InterviewTypeValue } from "@/lib/api";
 
 const jobRoles = [
   "Software Engineer",
@@ -36,14 +38,21 @@ const positions = [
   { value: "director", label: "Director" },
 ];
 
+const interviewTypes: { value: InterviewTypeValue; label: string; description: string }[] = [
+  { value: "behavioral", label: "Behavioral", description: "Soft skills & situational questions" },
+  { value: "technical", label: "Technical", description: "Domain knowledge & technical depth" },
+  { value: "mixed", label: "Mixed", description: "Combination of behavioral & technical" },
+];
+
 const Index = () => {
   const navigate = useNavigate();
   const { startInterview, isLoading } = useInterview();
+  const { isAuthenticated, user } = useAuth();
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedPosition, setSelectedPosition] = useState("");
   const [customRole, setCustomRole] = useState("");
-  // Generate random number of questions between 3-10
-  const generateRandomQuestions = () => Math.floor(Math.random() * 8) + 3; // 3-10 inclusive
+  const [interviewType, setInterviewType] = useState<InterviewTypeValue>("behavioral");
+  const generateRandomQuestions = () => Math.floor(Math.random() * 8) + 3;
   const [candidateProfile, setCandidateProfile] = useState("");
 
   const handleStartInterview = async () => {
@@ -61,6 +70,7 @@ const Index = () => {
         level: selectedPosition,
         questions: randomQuestions,
         candidate_profile: candidateProfile,
+        interview_type: interviewType,
       });
 
       // Navigate to interview with session data
@@ -163,17 +173,39 @@ const Index = () => {
                 </div>
               </div>
 
-              {/* Additional Options */}
+              {/* Interview Type */}
               <div className="space-y-4">
-                {/* Candidate Profile */}
-                <div className="space-y-4">
-                  <Label className="text-base">Candidate Profile (Optional)</Label>
-                  <Input
-                    placeholder="Brief summary of your background..."
-                    value={candidateProfile}
-                    onChange={(e) => setCandidateProfile(e.target.value)}
-                  />
+                <Label className="text-base flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-primary" />
+                  Interview Type
+                </Label>
+                <div className="grid grid-cols-3 gap-3">
+                  {interviewTypes.map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setInterviewType(type.value)}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        interviewType === type.value
+                          ? "border-primary bg-primary/10 shadow-glow"
+                          : "border-muted hover:border-primary/40"
+                      }`}
+                    >
+                      <div className="font-medium text-sm text-foreground">{type.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{type.description}</div>
+                    </button>
+                  ))}
                 </div>
+              </div>
+
+              {/* Candidate Profile */}
+              <div className="space-y-4">
+                <Label className="text-base">Candidate Profile (Optional)</Label>
+                <Input
+                  placeholder="Brief summary of your background..."
+                  value={candidateProfile}
+                  onChange={(e) => setCandidateProfile(e.target.value)}
+                />
               </div>
 
               <Button
@@ -197,6 +229,55 @@ const Index = () => {
               </Button>
             </div>
           </Card>
+
+          {/* Auth-aware navigation */}
+          <div className="mt-8 flex items-center justify-center gap-4 flex-wrap animate-fade-in">
+            {isAuthenticated ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-primary/30 hover:border-primary/60"
+                  onClick={() => navigate("/dashboard")}
+                >
+                  <LayoutDashboard className="mr-2 h-5 w-5 text-primary" />
+                  My Dashboard
+                </Button>
+                {(user?.role === "hr" || user?.role === "org_admin" || user?.role === "platform_admin") && (
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="border-primary/30 hover:border-primary/60"
+                    onClick={() => navigate("/hr")}
+                  >
+                    <Users className="mr-2 h-5 w-5 text-primary" />
+                    HR Dashboard
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-primary/30 hover:border-primary/60"
+                  onClick={() => navigate("/login")}
+                >
+                  <LogIn className="mr-2 h-5 w-5 text-primary" />
+                  Sign In
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-primary/30 hover:border-primary/60"
+                  onClick={() => navigate("/hr")}
+                >
+                  <Users className="mr-2 h-5 w-5 text-primary" />
+                  HR Dashboard
+                </Button>
+              </>
+            )}
+          </div>
 
           {/* Features */}
           <div className="grid md:grid-cols-3 gap-6 mt-12">
