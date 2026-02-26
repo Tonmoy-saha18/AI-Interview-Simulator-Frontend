@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { apiClient, InterviewStepResponse, InterviewStartRequest, APIError } from '@/lib/api';
+import { apiClient, InterviewStepResponse, InterviewStartRequest, APIError, CodingProblemBrief, ComplexityAnalysisModel } from '@/lib/api';
 import { toast } from 'sonner';
 
 export interface InterviewState {
@@ -22,10 +22,13 @@ export interface InterviewState {
   prompt: string | null;
   isLoading: boolean;
   error: string | null;
+  questionType: string | null;
+  codingProblem: CodingProblemBrief | null;
+  complexityAnalysis: ComplexityAnalysisModel | null;
 }
 
 export const useInterview = () => {
-  const [state, setState] = useState<InterviewState>({
+  const defaultState: InterviewState = {
     sessionId: null,
     status: null,
     currentQuestion: null,
@@ -45,36 +48,39 @@ export const useInterview = () => {
     prompt: null,
     isLoading: false,
     error: null,
-  });
+    questionType: null,
+    codingProblem: null,
+    complexityAnalysis: null,
+  };
+
+  const [state, setState] = useState<InterviewState>(defaultState);
 
   const updateState = useCallback((response: InterviewStepResponse) => {
-    console.log("Updating interview state with:", response);
-    setState(prev => {
-      const newState = {
-        ...prev,
-        sessionId: response.session_id,
-        status: response.status,
-        currentQuestion: response.question || null,
-        questionIndex: response.question_index || null,
-        questionLimit: response.question_limit || null,
-        questionDifficulty: response.question_difficulty || null,
-        questionTimeLimit: response.question_time_limit || null,
-        timeElapsed: response.time_elapsed || null,
-        timeRemaining: response.time_remaining || null,
-        totalTimeElapsed: response.total_time_elapsed || null,
-        timeExpired: response.time_expired || null,
-        isFollowUp: response.is_follow_up || null,
-        followUpCount: response.follow_up_count || null,
-        evaluation: response.evaluation || null,
-        feedback: response.feedback || null,
-        qaHistory: response.qa_history || [],
-        prompt: response.prompt || null,
-        isLoading: false,
-        error: null,
-      };
-      console.log("New interview state:", newState);
-      return newState;
-    });
+    setState(prev => ({
+      ...prev,
+      sessionId: response.session_id,
+      status: response.status,
+      currentQuestion: response.question || null,
+      questionIndex: response.question_index || null,
+      questionLimit: response.question_limit || null,
+      questionDifficulty: response.question_difficulty || null,
+      questionTimeLimit: response.question_time_limit || null,
+      timeElapsed: response.time_elapsed || null,
+      timeRemaining: response.time_remaining || null,
+      totalTimeElapsed: response.total_time_elapsed || null,
+      timeExpired: response.time_expired || null,
+      isFollowUp: response.is_follow_up || null,
+      followUpCount: response.follow_up_count || null,
+      evaluation: response.evaluation || null,
+      feedback: response.feedback || null,
+      qaHistory: response.qa_history || [],
+      prompt: response.prompt || null,
+      isLoading: false,
+      error: null,
+      questionType: response.question_type || null,
+      codingProblem: response.coding_problem || null,
+      complexityAnalysis: response.complexity_analysis || null,
+    }));
   }, []);
 
   // Method to initialize state with existing response data
@@ -218,27 +224,7 @@ export const useInterview = () => {
 
     try {
       await apiClient.endSession(state.sessionId);
-      setState({
-        sessionId: null,
-        status: null,
-        currentQuestion: null,
-        questionIndex: null,
-        questionLimit: null,
-        questionDifficulty: null,
-        questionTimeLimit: null,
-        timeElapsed: null,
-        timeRemaining: null,
-        totalTimeElapsed: null,
-        timeExpired: null,
-        isFollowUp: null,
-        followUpCount: null,
-        evaluation: null,
-        feedback: null,
-        qaHistory: [],
-        prompt: null,
-        isLoading: false,
-        error: null,
-      });
+      setState(defaultState);
       toast.success('Session ended');
     } catch (error) {
       const errorMessage = getErrorMessage(error, 'Failed to end session');
@@ -248,27 +234,7 @@ export const useInterview = () => {
   }, [state.sessionId]);
 
   const reset = useCallback(() => {
-    setState({
-      sessionId: null,
-      status: null,
-      currentQuestion: null,
-      questionIndex: null,
-      questionLimit: null,
-      questionDifficulty: null,
-      questionTimeLimit: null,
-      timeElapsed: null,
-      timeRemaining: null,
-      totalTimeElapsed: null,
-      timeExpired: null,
-      isFollowUp: null,
-      followUpCount: null,
-      evaluation: null,
-      feedback: null,
-      qaHistory: [],
-      prompt: null,
-      isLoading: false,
-      error: null,
-    });
+    setState(defaultState);
   }, []);
 
   return {

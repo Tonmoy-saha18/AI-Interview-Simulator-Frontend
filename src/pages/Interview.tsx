@@ -5,12 +5,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Mic, Send, CheckCircle2, Loader2, Clock, AlertCircle } from "lucide-react";
+import { Mic, Send, CheckCircle2, Loader2, Clock, AlertCircle, Code } from "lucide-react";
 import { toast } from "sonner";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import QuestionCard from "@/components/QuestionCard";
+import CodingChallenge from "@/components/CodingChallenge";
 import { useInterview } from "@/hooks/useInterview";
-import { APIError } from "@/lib/api";
+import { APIError, CodingProblem } from "@/lib/api";
 
 const Interview = () => {
   const location = useLocation();
@@ -34,6 +35,9 @@ const Interview = () => {
     qaHistory, 
     isLoading, 
     error,
+    questionType,
+    codingProblem,
+    complexityAnalysis,
     submitAnswer,
     getSessionState,
     endSession,
@@ -305,8 +309,8 @@ const Interview = () => {
           </div>
         )}
 
-        {/* Question Card */}
-        {currentQuestion && (
+        {/* Question Card (behavioral) or Coding Challenge */}
+        {currentQuestion && questionType !== "coding" && (
           <QuestionCard 
             question={currentQuestion} 
             questionNumber={questionIndex !== null ? questionIndex : 1}
@@ -316,59 +320,53 @@ const Interview = () => {
           />
         )}
 
+        {/* Coding question indicator */}
+        {questionType === "coding" && currentQuestion && (
+          <Card className="p-4 bg-gradient-card border border-accent/20 backdrop-blur-sm animate-fade-in">
+            <div className="flex items-center gap-2">
+              <Code className="w-5 h-5 text-accent" />
+              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30">Coding Challenge</Badge>
+              <span className="text-sm text-muted-foreground">{currentQuestion}</span>
+            </div>
+          </Card>
+        )}
+
+        {/* Coding Challenge with Monaco Editor */}
+        {questionType === "coding" && codingProblem && sessionId && (
+          <div className="animate-fade-in">
+            <CodingChallenge
+              problem={{
+                id: codingProblem.problem_id,
+                title: codingProblem.title,
+                slug: "",
+                description_md: codingProblem.description_md,
+                constraints_md: codingProblem.constraints_md,
+                difficulty: questionDifficulty || "medium",
+                topic_tags: [],
+                supported_languages: codingProblem.supported_languages,
+                function_signatures: codingProblem.function_signatures || {},
+                sample_test_cases: codingProblem.sample_test_cases,
+                time_limit_ms: codingProblem.time_limit_ms,
+                memory_limit_kb: codingProblem.memory_limit_kb,
+              }}
+              sessionId={sessionId}
+              onSubmitComplete={(result) => {
+                submitAnswer(`[CODE SUBMISSION] Score: ${result.score}% (${result.passed_count}/${result.total_test_cases} passed)`);
+              }}
+            />
+          </div>
+        )}
+
         {/* Loading State */}
         {isLoading && !currentQuestion && (
           <div className="bg-gradient-card rounded-2xl shadow-glow p-8 text-center animate-fade-in border border-primary/20 backdrop-blur-sm">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
             <p className="text-muted-foreground">Loading interview...</p>
-            <p className="text-xs text-muted-foreground mt-2">
-              Session ID: {sessionId || 'None'} | Status: {status || 'None'}
-            </p>
           </div>
         )}
 
-        {/* Debug Info - Remove this in production */}
-        {/* {process.env.NODE_ENV === 'development' && (
-          <div className="bg-muted/50 rounded-lg p-4 text-xs">
-            <h4 className="font-bold mb-2">Debug Info:</h4>
-            <p>Session ID: {sessionId || 'None'}</p>
-            <p>Status: {status || 'None'}</p>
-            <p>Current Question: {currentQuestion || 'None'}</p>
-            <p>Question Index: {questionIndex !== null ? questionIndex : 'None'} (Display: {questionIndex !== null ? questionIndex : 'None'})</p>
-            <p>Question Limit: {questionLimit !== null ? questionLimit : 'None'}</p>
-            <p>Is Loading: {isLoading ? 'Yes' : 'No'}</p>
-            <p>Error: {error || 'None'}</p>
-            <p>Initial Response: {initialResponse ? 'Present' : 'None'}</p>
-            <div className="mt-2 flex gap-2">
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={() => {
-                  if (initialResponse) {
-                    initializeWithResponse(initialResponse);
-                  } else if (locationSessionId) {
-                    getSessionState(locationSessionId);
-                  }
-                }}
-              >
-                Refresh State
-              </Button>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={() => {
-                  console.log("Current state:", { sessionId, status, currentQuestion, questionIndex, questionLimit, isLoading, error });
-                  console.log("Location state:", { role, position, sessionId: locationSessionId, initialResponse });
-                }}
-              >
-                Log State
-              </Button>
-            </div>
-          </div>
-        )} */}
-
-        {/* Answer Input */}
-        {currentQuestion && (
+        {/* Behavioral Answer Input (only for non-coding questions) */}
+        {currentQuestion && questionType !== "coding" && (
           <div className="bg-gradient-card rounded-2xl shadow-glow p-6 space-y-4 animate-fade-in border border-primary/20 backdrop-blur-sm">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-foreground">

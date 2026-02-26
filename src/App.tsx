@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import InterviewReport from "./pages/InterviewReport";
+import AdminProblems from "./pages/AdminProblems";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +66,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["hr", "org_admin", "platform_admin"]}>
                   <HRResults />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/problems"
+              element={
+                <ProtectedRoute allowedRoles={["platform_admin", "org_admin"]}>
+                  <AdminProblems />
                 </ProtectedRoute>
               }
             />

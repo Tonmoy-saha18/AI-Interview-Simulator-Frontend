@@ -1,5 +1,8 @@
 // API client for AI Interview Simulator
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Use empty string in dev so Vite proxy handles /api, /hr, /interview
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? "" : "http://localhost:8000");
 
 // --- Auth types ---
 
@@ -75,6 +78,25 @@ export interface QARecordModel {
   follow_ups?: QARecordModel[] | null;
 }
 
+export interface CodingProblemBrief {
+  problem_id: string;
+  title: string;
+  description_md: string;
+  constraints_md?: string | null;
+  supported_languages: string[];
+  function_signatures?: Record<string, string> | null;
+  sample_test_cases: { input: string; expected_output: string }[];
+  time_limit_ms: number;
+  memory_limit_kb: number;
+}
+
+export interface ComplexityAnalysisModel {
+  estimated_time_complexity?: string | null;
+  estimated_space_complexity?: string | null;
+  reasoning?: string | null;
+  meets_expected?: boolean | null;
+}
+
 export interface InterviewStepResponse {
   session_id: string;
   status: string;
@@ -93,6 +115,9 @@ export interface InterviewStepResponse {
   feedback?: string | null;
   qa_history: QARecordModel[];
   prompt?: string | null;
+  question_type?: string | null;
+  coding_problem?: CodingProblemBrief | null;
+  complexity_analysis?: ComplexityAnalysisModel | null;
 }
 
 export interface ValidationError {
@@ -171,6 +196,10 @@ export interface InterviewLinkResponse {
   level: string;
   expires_at: string;
   status: string;
+  interview_type?: string | null;
+  notes?: string | null;
+  tags?: string[] | null;
+  created_at?: string | null;
 }
 
 export interface InterviewListItem {
@@ -180,10 +209,13 @@ export interface InterviewListItem {
   role: string;
   level: string;
   status: string;
+  interview_type?: string | null;
   created_at: string;
   expires_at: string;
   used_at?: string | null;
   has_results: boolean;
+  notes?: string | null;
+  tags?: string[] | null;
 }
 
 export interface InterviewResultResponse {
@@ -197,6 +229,54 @@ export interface InterviewResultResponse {
   qa_history: QARecordModel[];
   total_time_elapsed?: number | null;
   completed_at: string;
+}
+
+export interface PatchInterviewRequest {
+  expires_in_days?: number;
+  notes?: string;
+  tags?: string[];
+  custom_instructions?: string;
+  revoke?: boolean;
+}
+
+// --- Coding / Judge types ---
+
+export interface CodingProblem {
+  id: string;
+  title: string;
+  slug: string;
+  description_md: string;
+  constraints_md?: string | null;
+  difficulty: string;
+  topic_tags: string[];
+  supported_languages: string[];
+  function_signatures: Record<string, string>;
+  sample_test_cases: { input: string; expected_output: string }[];
+  time_limit_ms: number;
+  memory_limit_kb: number;
+}
+
+export interface CodeRunRequest {
+  code: string;
+  language: string;
+  problem_id: string;
+}
+
+export interface TestCaseResult {
+  input: string;
+  expected_output: string;
+  actual_output: string;
+  passed: boolean;
+  execution_time_ms: number;
+  error?: string | null;
+}
+
+export interface CodeRunResponse {
+  total_test_cases: number;
+  passed_count: number;
+  failed_count: number;
+  results: TestCaseResult[];
+  score: number;
 }
 
 export class APIError extends Error {
@@ -410,13 +490,10 @@ class ApiClient {
     return this.request<InterviewReportResponse>(`/api/v1/interviews/${sessionId}/report`);
   }
 
-  // --- HR endpoints ---
+  // --- HR endpoints (JWT-auth, org-scoped) ---
 
-  /**
-   * Create an interview from a CV upload (multipart form)
-   */
   async createHRInterview(formData: FormData): Promise<InterviewLinkResponse> {
-    const url = `${this.baseUrl}/hr/interviews/create`;
+    const url = `${this.baseUrl}/api/v1/hr/interviews`;
     const headers: Record<string, string> = {};
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
@@ -434,31 +511,52 @@ class ApiClient {
     return response.json();
   }
 
-  /**
-   * List all interviews created by an HR user
-   */
-  async listHRInterviews(hrEmail: string): Promise<InterviewListItem[]> {
-    return this.request<InterviewListItem[]>(
-      `/hr/interviews?hr_email=${encodeURIComponent(hrEmail)}`
-    );
+  async listHRInterviews(statusFilter?: string): Promise<InterviewListItem[]> {
+    const params = statusFilter ? `?status_filter=${encodeURIComponent(statusFilter)}` : '';
+    return this.request<InterviewListItem[]>(`/api/v1/hr/interviews${params}`);
   }
 
-  /**
-   * Get interview details
-   */
-  async getHRInterview(interviewId: string, hrEmail: string): Promise<InterviewLinkResponse> {
-    return this.request<InterviewLinkResponse>(
-      `/hr/interviews/${interviewId}?hr_email=${encodeURIComponent(hrEmail)}`
-    );
+  async getHRInterview(interviewId: string): Promise<InterviewLinkResponse> {
+    return this.request<InterviewLinkResponse>(`/api/v1/hr/interviews/${interviewId}`);
   }
 
-  /**
-   * Get interview results
-   */
-  async getHRInterviewResults(interviewId: string, hrEmail: string): Promise<InterviewResultResponse> {
-    return this.request<InterviewResultResponse>(
-      `/hr/interviews/${interviewId}/results?hr_email=${encodeURIComponent(hrEmail)}`
-    );
+  async getHRInterviewResults(interviewId: string): Promise<InterviewResultResponse> {
+    return this.request<InterviewResultResponse>(`/api/v1/hr/interviews/${interviewId}/results`);
+  }
+
+  async patchHRInterview(interviewId: string, body: PatchInterviewRequest): Promise<InterviewLinkResponse> {
+    return this.request<InterviewLinkResponse>(`/api/v1/hr/interviews/${interviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // --- Code / Judge endpoints ---
+
+  async listProblems(difficulty?: string, topic?: string): Promise<CodingProblem[]> {
+    const params = new URLSearchParams();
+    if (difficulty) params.set('difficulty', difficulty);
+    if (topic) params.set('topic', topic);
+    const qs = params.toString();
+    return this.request<CodingProblem[]>(`/api/v1/problems${qs ? '?' + qs : ''}`);
+  }
+
+  async getProblem(id: string): Promise<CodingProblem> {
+    return this.request<CodingProblem>(`/api/v1/problems/${id}`);
+  }
+
+  async runCode(sessionId: string, body: CodeRunRequest): Promise<CodeRunResponse> {
+    return this.request<CodeRunResponse>(`/api/v1/interviews/${sessionId}/code/run`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async submitCode(sessionId: string, body: CodeRunRequest): Promise<CodeRunResponse> {
+    return this.request<CodeRunResponse>(`/api/v1/interviews/${sessionId}/code/submit`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   /**
