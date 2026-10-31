@@ -1,63 +1,184 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Mic, Send, CheckCircle2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Mic, Send, CheckCircle2, Loader2, Clock, AlertCircle, Code } from "lucide-react";
 import { toast } from "sonner";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import QuestionCard from "@/components/QuestionCard";
-
-// Mock questions - in production these would come from your Python Langraph backend
-const mockQuestions = [
-  "Tell me about yourself and your background in this field.",
-  "What are your key strengths that make you suitable for this role?",
-  "Describe a challenging project you've worked on and how you handled it.",
-  "Where do you see yourself in five years?",
-  "Why are you interested in this position at our company?",
-];
+import CodingChallenge from "@/components/CodingChallenge";
+import { useInterview } from "@/hooks/useInterview";
+import { APIError, CodingProblem } from "@/lib/api";
 
 const Interview = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, position } = location.state || {};
+  const { 
+    sessionId, 
+    status, 
+    currentQuestion, 
+    questionIndex, 
+    questionLimit,
+    questionDifficulty,
+    questionTimeLimit,
+    timeElapsed,
+    timeRemaining,
+    totalTimeElapsed,
+    timeExpired,
+    isFollowUp,
+    followUpCount,
+    evaluation, 
+    feedback, 
+    qaHistory, 
+    isLoading, 
+    error,
+    questionType,
+    codingProblem,
+    complexityAnalysis,
+    submitAnswer,
+    getSessionState,
+    endSession,
+    reset,
+    initializeWithResponse
+  } = useInterview();
   
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const { role, position, sessionId: locationSessionId, initialResponse } = location.state || {};
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
+  const [timerExpired, setTimerExpired] = useState(false);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const questionStartTimeRef = useRef<number | null>(null);
   
+  // Initialize timer when question changes
+  useEffect(() => {
+    if (questionTimeLimit !== null && currentQuestion && status === 'awaiting_answer') {
+      // Start timer from timeRemaining if available (and > 0), otherwise from questionTimeLimit
+      const initialTime = (timeRemaining !== null && timeRemaining > 0) ? timeRemaining : questionTimeLimit;
+      setTimerSeconds(initialTime);
+      setTimerExpired(initialTime <= 0);
+      questionStartTimeRef.current = Date.now();
+      
+      // Clear any existing timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+      
+      // Only start countdown if time is remaining
+      if (initialTime > 0) {
+        timerIntervalRef.current = setInterval(() => {
+          setTimerSeconds(prev => {
+            if (prev === null || prev <= 0) {
+              setTimerExpired(true);
+              if (timerIntervalRef.current) {
+                clearInterval(timerIntervalRef.current);
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+      
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+      };
+    }
+  }, [currentQuestion, questionTimeLimit, timeRemaining, status]);
+
+
   useEffect(() => {
     if (!role || !position) {
       navigate("/");
+      return;
     }
-  }, [role, position, navigate]);
 
-  const progress = ((currentQuestion + 1) / mockQuestions.length) * 100;
+    console.log("Interview page mounted with:", { role, position, initialResponse, locationSessionId });
 
-  const handleNextQuestion = () => {
+    // If we have an initial response from the Index page, initialize the state with it
+    if (initialResponse) {
+      console.log("Initializing with response:", initialResponse);
+      initializeWithResponse(initialResponse);
+      return;
+    }
+
+    // If we have a sessionId from location state, try to restore the session
+    if (locationSessionId) {
+      console.log("Restoring session:", locationSessionId);
+      getSessionState(locationSessionId);
+    }
+  }, [role, position, navigate, initialResponse, locationSessionId, getSessionState, initializeWithResponse]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Calculate progress
+  const progress = questionIndex !== null && questionLimit 
+    ? (questionIndex / questionLimit) * 100 
+    : 0;
+
+  // Debug logging
+  console.log("Interview page state:", {
+    sessionId,
+    status,
+    currentQuestion,
+    questionIndex,
+    questionLimit,
+    isLoading,
+    error,
+    progress
+  });
+
+  const handleSubmitAnswer = async () => {
     if (!currentAnswer.trim()) {
       toast.error("Please provide an answer before continuing");
       return;
     }
 
-    const newAnswers = [...answers, currentAnswer];
-    setAnswers(newAnswers);
-    setCurrentAnswer("");
+    // Calculate time taken
+    const timeTaken = questionStartTimeRef.current 
+      ? Math.floor((Date.now() - questionStartTimeRef.current) / 1000)
+      : undefined;
+    
+    const expired = timerExpired || (timerSeconds !== null && timerSeconds <= 0);
 
-    if (currentQuestion < mockQuestions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1);
-      toast.success("Answer saved!");
-    } else {
-      // Interview complete - navigate to feedback
-      navigate("/feedback", { 
-        state: { 
-          role, 
-          position, 
-          answers: newAnswers,
-          questions: mockQuestions 
-        } 
-      });
+    try {
+      // Stop timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+
+      const response = await submitAnswer(currentAnswer, timeTaken, expired);
+      setCurrentAnswer("");
+      setTimerSeconds(null);
+      setTimerExpired(false);
+
+      // Check if interview is completed
+      if (response.status === 'completed') {
+        navigate("/feedback", { 
+          state: { 
+            sessionId: response.session_id,
+            role, 
+            position,
+            finalResponse: response
+          } 
+        });
+      }
+    } catch (error) {
+      // Error handling is done in the hook
+      console.error("Failed to submit answer:", error);
     }
   };
 
@@ -65,8 +186,77 @@ const Interview = () => {
     setCurrentAnswer(prev => prev + " " + transcript);
   };
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Don't end session on unmount as user might navigate back
+      // Only reset local state
+    };
+  }, []);
+
   if (!role || !position) {
     return null;
+  }
+
+  if (error) {
+    // Check if error contains APIError-like information
+    const isRateLimitError = error.toLowerCase().includes('quota') || error.toLowerCase().includes('rate limit');
+    const isAPIServiceError = error.toLowerCase().includes('api service') || error.toLowerCase().includes('openai');
+    const isNetworkError = error.toLowerCase().includes('network') || error.toLowerCase().includes('connection');
+
+    return (
+      <div className="min-h-screen bg-gradient-hero py-8 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="bg-gradient-card rounded-2xl p-8 border-2 border-destructive/30 shadow-glow">
+            <div className="space-y-4">
+              <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-8 h-8 text-destructive" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground">
+                {isRateLimitError ? 'Rate Limit Exceeded' : 
+                 isAPIServiceError ? 'API Service Error' :
+                 isNetworkError ? 'Network Error' :
+                 'Error'}
+              </h2>
+              <p className="text-muted-foreground">{error}</p>
+              
+              {isRateLimitError && (
+                <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/20">
+                  <p className="text-sm text-muted-foreground">
+                    This usually means the OpenAI API quota has been exceeded. Please check your OpenAI billing and quota settings.
+                  </p>
+                </div>
+              )}
+              
+              {isAPIServiceError && (
+                <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/20">
+                  <p className="text-sm text-muted-foreground">
+                    The external API service is experiencing issues. Please try again later.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex gap-4 justify-center">
+            <Button 
+              onClick={() => navigate("/")}
+              variant="outline"
+            >
+              Back to Home
+            </Button>
+            {isRateLimitError || isAPIServiceError ? (
+              <Button 
+                onClick={() => window.location.reload()}
+                variant="gradient"
+              >
+                Retry
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -83,80 +273,170 @@ const Interview = () => {
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-3xl font-bold text-foreground">{role}</h1>
-              <p className="text-muted-foreground">{position} Position</p>
+              <p className="text-muted-foreground capitalize">{position} Position</p>
             </div>
             <div className="text-right">
               <div className="text-sm text-muted-foreground">Question</div>
               <div className="text-2xl font-bold text-primary">
-                {currentQuestion + 1}/{mockQuestions.length}
+                {questionIndex !== null && questionLimit ? `${questionIndex}/${questionLimit}` : 'Loading...'}
               </div>
             </div>
           </div>
           <Progress value={progress} className="h-2" />
         </div>
 
-        {/* Question Card */}
-        <QuestionCard 
-          question={mockQuestions[currentQuestion]} 
-          questionNumber={currentQuestion + 1}
-        />
+        {/* Timer Display */}
+        {timerSeconds !== null && questionTimeLimit && (
+          <div className="flex items-center justify-center gap-2">
+            <Card className="px-4 py-2 bg-gradient-card border border-primary/20 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <Clock className={`w-4 h-4 ${timerSeconds <= 30 ? 'text-destructive animate-pulse' : 'text-primary'}`} />
+                <span className={`font-mono text-lg font-bold ${
+                  timerSeconds <= 30 ? 'text-destructive' : 
+                  timerSeconds <= 60 ? 'text-accent' : 
+                  'text-foreground'
+                }`}>
+                  {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
+                </span>
+                {timerExpired && (
+                  <Badge variant="destructive" className="ml-2">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Time Expired
+                  </Badge>
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
 
-        {/* Answer Input */}
-        <div className="bg-gradient-card rounded-2xl shadow-glow p-6 space-y-4 animate-fade-in border border-primary/20 backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-foreground">
-              Your Answer
-            </label>
-            <VoiceRecorder 
-              onTranscript={handleVoiceTranscript}
-              isRecording={isRecording}
-              setIsRecording={setIsRecording}
+        {/* Question Card (behavioral) or Coding Challenge */}
+        {currentQuestion && questionType !== "coding" && (
+          <QuestionCard 
+            question={currentQuestion} 
+            questionNumber={questionIndex !== null ? questionIndex : 1}
+            difficulty={questionDifficulty}
+            isFollowUp={isFollowUp}
+            followUpCount={followUpCount}
+          />
+        )}
+
+        {/* Coding question indicator */}
+        {questionType === "coding" && currentQuestion && (
+          <Card className="p-4 bg-gradient-card border border-accent/20 backdrop-blur-sm animate-fade-in">
+            <div className="flex items-center gap-2">
+              <Code className="w-5 h-5 text-accent" />
+              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30">Coding Challenge</Badge>
+              <span className="text-sm text-muted-foreground">{currentQuestion}</span>
+            </div>
+          </Card>
+        )}
+
+        {/* Coding Challenge with Monaco Editor */}
+        {questionType === "coding" && codingProblem && sessionId && (
+          <div className="animate-fade-in">
+            <CodingChallenge
+              problem={{
+                id: codingProblem.problem_id,
+                title: codingProblem.title,
+                slug: "",
+                description_md: codingProblem.description_md,
+                constraints_md: codingProblem.constraints_md,
+                difficulty: questionDifficulty || "medium",
+                topic_tags: [],
+                supported_languages: codingProblem.supported_languages,
+                function_signatures: codingProblem.function_signatures || {},
+                sample_test_cases: codingProblem.sample_test_cases,
+                time_limit_ms: codingProblem.time_limit_ms,
+                memory_limit_kb: codingProblem.memory_limit_kb,
+              }}
+              sessionId={sessionId}
+              onSubmitComplete={(result) => {
+                submitAnswer(`[CODE SUBMISSION] Score: ${result.score}% (${result.passed_count}/${result.total_test_cases} passed)`);
+              }}
             />
           </div>
-          
-          <Textarea
-            value={currentAnswer}
-            onChange={(e) => setCurrentAnswer(e.target.value)}
-            placeholder="Type your answer here or use the microphone..."
-            className="min-h-[200px] text-base resize-none"
-            disabled={isRecording}
-          />
+        )}
 
-          <div className="flex justify-end">
-            <Button
-              onClick={handleNextQuestion}
-              size="lg"
-              variant="gradient"
-              disabled={isRecording}
-            >
-              {currentQuestion < mockQuestions.length - 1 ? (
-                <>
-                  Next Question <Send className="ml-2 h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Complete Interview <CheckCircle2 className="ml-2 h-4 w-4" />
-                </>
-              )}
-            </Button>
+        {/* Loading State */}
+        {isLoading && !currentQuestion && (
+          <div className="bg-gradient-card rounded-2xl shadow-glow p-8 text-center animate-fade-in border border-primary/20 backdrop-blur-sm">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading interview...</p>
           </div>
-        </div>
+        )}
+
+        {/* Behavioral Answer Input (only for non-coding questions) */}
+        {currentQuestion && questionType !== "coding" && (
+          <div className="bg-gradient-card rounded-2xl shadow-glow p-6 space-y-4 animate-fade-in border border-primary/20 backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                Your Answer
+              </label>
+              <VoiceRecorder 
+                onTranscript={handleVoiceTranscript}
+                isRecording={isRecording}
+                setIsRecording={setIsRecording}
+              />
+            </div>
+            
+            <Textarea
+              value={currentAnswer}
+              onChange={(e) => setCurrentAnswer(e.target.value)}
+              placeholder="Type your answer here or use the microphone..."
+              className="min-h-[200px] text-base resize-none"
+              disabled={isRecording || isLoading}
+            />
+
+            <div className="flex justify-between items-center">
+              {timerExpired && (
+                <div className="text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Time has expired. You can still submit your answer.
+                </div>
+              )}
+              <div className="ml-auto">
+                <Button
+                  onClick={handleSubmitAnswer}
+                  size="lg"
+                  variant="gradient"
+                  disabled={isRecording || isLoading || !currentAnswer.trim()}
+                >
+                  {isLoading ? (
+                    <>
+                      Submitting... <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    </>
+                  ) : status === 'completed' || (questionIndex !== null && questionLimit && questionIndex >= questionLimit) ? (
+                    <>
+                      Complete Interview <CheckCircle2 className="ml-2 h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer <Send className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Progress Indicator */}
-        <div className="flex justify-center gap-2">
-          {mockQuestions.map((_, index) => (
-            <div
-              key={index}
-              className={`h-2 rounded-full transition-all ${
-                index < currentQuestion
-                  ? "w-8 bg-success"
-                  : index === currentQuestion
-                  ? "w-12 bg-primary animate-pulse-glow"
-                  : "w-6 bg-muted"
-              }`}
-            />
-          ))}
-        </div>
+        {questionLimit && (
+          <div className="flex justify-center gap-2">
+            {Array.from({ length: questionLimit }, (_, index) => (
+              <div
+                key={index}
+                className={`h-2 rounded-full transition-all ${
+                  questionIndex !== null && index < questionIndex
+                    ? "w-8 bg-success"
+                    : questionIndex !== null && index === questionIndex
+                    ? "w-12 bg-primary animate-pulse-glow"
+                    : "w-6 bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
